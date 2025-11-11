@@ -1,0 +1,17 @@
+[project]
+name = "usd-vnd-prediction"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "boto3>=1.40.70",
+    "ipykernel>=7.1.0",
+    "matplotlib>=3.10.7",
+    "mlflow>=3.6.0",
+    "numpy>=2.3.4",
+    "optuna>=4.6.0",
+    "pandas>=2.3.3",
+    "scikit-learn>=1.7.2",
+    "xgboost>=3.1.1",
+]
