@@ -4,14 +4,32 @@ version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
-dependencies = [
+dependencies = []
+
+[project.optional-dependencies]
+api = [
+    "fastapi>=0.121.1",
+    "uvicorn>=0.38.0",
     "boto3>=1.40.70",
-    "ipykernel>=7.1.0",
-    "matplotlib>=3.10.7",
-    "mlflow>=3.6.0",
-    "numpy>=2.3.4",
-    "optuna>=4.6.0",
     "pandas>=2.3.3",
-    "scikit-learn>=1.7.2",
+    "numpy>=2.3.4",
     "xgboost>=3.1.1",
+    "scikit-learn>=1.7.2",
+    "python-dotenv>=1.0.0",
+]
+
+streamlit = [
+    "streamlit>=1.51.0",
+    "requests>=2.31.0",
+    "pandas>=2.3.3",
+    "plotly>=5.24.1",
+    "boto3>=1.40.70",
+    "python-dotenv>=1.0.0",
+]
+
+training = [
+    "mlflow>=3.6.0",
+    "optuna>=4.6.0",
+    "matplotlib>=3.10.7",
+    "ipykernel>=7.1.0",
 ]

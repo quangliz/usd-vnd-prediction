@@ -1,0 +1,17 @@
+FROM python:3.13-slim
+
+WORKDIR /app
+
+# Copy dependency files first (better caching)
+COPY pyproject.toml uv.lock* ./
+
+# Install uv (dependency manager)
+RUN pip install uv
+RUN uv sync --frozen --no-dev --extra streamlit
+
+# Copy project files
+COPY . .
+
+EXPOSE 8501
+
+CMD ["uv", "run", "streamlit", "run", "main.py", "--server.port", "8501"]

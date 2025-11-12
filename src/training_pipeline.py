@@ -5,13 +5,20 @@ import argparse
 import pandas as pd
 import xgboost as xgb
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
-from feature_pipeline import split_data
+from src.feature_pipeline import split_data
 import mlflow
 import optuna
+from joblib import load, dump
+
 
 DATA_PATH = Path(__file__).parent.parent / 'usdvnd' / 'processed' / 'cleaned_features_regression.csv'
-SAVE_MODEL_PATH = Path(__file__).parent.parent / 'models' / 'xgboost_regression' / 'best_model.pkl'
-SAVE_TUNED_MODEL_PATH = Path(__file__).parent.parent / 'models' / 'xgboost_regression' / 'tuned_model.pkl'
+
+SAVE_MODEL_PATH = Path(__file__).parent.parent / 'models' / 'xgboost_regression'
+SAVE_MODEL_PATH.mkdir(parents=True, exist_ok=True)
+
+SAVE_TUNED_MODEL_PATH = Path(__file__).parent.parent / 'models' / 'xgboost_regression' / 'tuned_model'
+SAVE_TUNED_MODEL_PATH.mkdir(parents=True, exist_ok=True)
+
 MLFLOW_TRACKING_URI = Path(__file__).parent.parent / 'mlruns'
 
 
@@ -30,14 +37,15 @@ def train(
     df = pd.read_csv(data_path)
     df.set_index('Ngày', inplace=True)
     df.index = pd.to_datetime(df.index)
-    X_train, y_train, X_test, y_test = split_data(df, split_ratio=0.8)
+    X_train, y_train, X_test, y_test = split_data(df, split_ratio=1)
 
     # train the model
     model = xgb.XGBRegressor()
     model.fit(X_train, y_train)
 
     # save the model
-    model.save(save_model_path)
+    dump(model, str(save_model_path / 'best_model.pkl'))
+    print(f"Model saved to {save_model_path / 'best_model.pkl'}")
 
 def eval(
     data_path: Path = DATA_PATH,
@@ -57,7 +65,7 @@ def eval(
     X_train, y_train, X_test, y_test = split_data(df, split_ratio=0.8)
 
     # load the model
-    model = xgb.XGBRegressor.load(model_path)
+    model = load(str(model_path))
 
     # evaluate the model
     y_pred = model.predict(X_test)
@@ -68,31 +76,13 @@ def eval(
     return mae, mse, r2
 
 
-def _load_data(
-    data_path: Path = DATA_PATH,
-    split_ratio: float = 0.8,
-) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    """
-    Load the data
-    Args:
-        data_path: Path = DATA_PATH: path to the data
-        split_ratio: float = 0.8: ratio of training data to total data
-    Returns:
-        tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]: training and testing sets
-    """
-    df = pd.read_csv(data_path)
-    df.set_index('Ngày', inplace=True)
-    df.index = pd.to_datetime(df.index)
-    X_train, y_train, X_test, y_test = split_data(df, split_ratio=split_ratio)
-    return X_train, y_train, X_test, y_test
-
 def tune(
     data_path: Path = DATA_PATH,
     n_trials: int = 10,
     tracking_uri: Path = MLFLOW_TRACKING_URI,
     experiment_name: str = "xgboost_regression",
     save_tuned_model_path: Path = SAVE_TUNED_MODEL_PATH,
-):
+) -> tuple[dict, dict]:
     """
     Tune the model
     Args:
@@ -102,14 +92,17 @@ def tune(
         experiment_name: str = "xgboost_regression": name of the experiment
         save_tuned_model_path: Path = SAVE_TUNED_MODEL_PATH: path to save the tuned model
     Returns:
-        None
+        tuple[dict, dict]: best parameters and metrics
     """
     if tracking_uri:
         mlflow.set_tracking_uri(tracking_uri)
     if experiment_name:
         mlflow.set_experiment(experiment_name)
 
-    X_train, y_train, X_test, y_test = _load_data(data_path, split_ratio=0.8)
+    df = pd.read_csv(data_path)
+    df.set_index('Ngày', inplace=True)
+    df.index = pd.to_datetime(df.index)
+    X_train, y_train, X_test, y_test = split_data(df, split_ratio=0.8)
 
     def objective(trial: optuna.Trial) -> float:
         params = {
@@ -138,37 +131,47 @@ def tune(
             mlflow.log_metrics({"mae": mae, "mse": mse, "r2": r2})
             mlflow.xgboost.log_model(model, "model")
         return mae
-
+    # create study
     study = optuna.create_study(direction="minimize")
     study.optimize(objective, n_trials=n_trials)
+    
+    # End any active run from the study
+    mlflow.end_run()
     
     best_params = study.best_trial.params
     
     # retrain the model with the best parameters
     best_model = xgb.XGBRegressor(**best_params)
     best_model.fit(X_train, y_train)
-    mlflow.xgboost.log_model(best_model, "model")
-    mlflow.log_params(best_params)
+    
+    # Evaluate the best model
+    y_pred = best_model.predict(X_test)
+    mae = mean_absolute_error(y_test, y_pred)
+    mse = mean_squared_error(y_test, y_pred)
+    r2 = r2_score(y_test, y_pred)
+    
     log_metrics = {
-        "mae": study.best_trial.value,
-        "mse": study.best_trial.value,
-        "r2": study.best_trial.value
+        "mae": mae,
+        "mse": mse,
+        "r2": r2
     }
-    mlflow.log_metrics(log_metrics)
 
-    best_model.save(save_tuned_model_path)
-
+    dump(best_model, str(save_tuned_model_path / 'tuned_model.pkl'))
+    print(f"Tuned model saved to {save_tuned_model_path / 'tuned_model.pkl'}")
+    
     # log the best model
     with mlflow.start_run(run_name="best_xgboost_model"):
         mlflow.log_params(best_params)
         mlflow.log_metrics(log_metrics)
         mlflow.xgboost.log_model(best_model, "model")
+    
+    print(f"Best parameters: {best_params}")
+    print(f"Log metrics: {log_metrics}")
     return best_params, log_metrics
 
 def main():
-    
     parser = argparse.ArgumentParser(description="Training pipeline")
-    subparsers = parser.add_subparsers(dest="command")
+    subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
     # train command
     train_parser = subparsers.add_parser("train", description="Train the model")
@@ -198,8 +201,19 @@ def main():
         tune(args.data_path, args.n_trials, args.tracking_uri, args.experiment_name, args.save_tuned_model_path)
     elif args.command == "eval":
         eval(args.data_path, args.model_path)
-    return args.func(**vars(args))
+    else:
+        parser.print_help()
 
 
 if __name__ == "__main__":
     main()
+
+    # guide to use the pipeline
+    """
+    To train the model:
+    python training_pipeline.py train --data-path <data-path> --save-model-path <save-model-path>
+    To tune the model:
+    python training_pipeline.py tune --data-path <data-path> --n-trials <n-trials> --tracking-uri <tracking-uri> --experiment-name <experiment-name> --save-tuned-model-path <save-tuned-model-path>
+    To evaluate the model:
+    python training_pipeline.py eval --data-path <data-path> --model-path <model-path>
+    """

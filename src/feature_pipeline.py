@@ -19,7 +19,7 @@ def cleaning_data(
         pd.DataFrame: cleaned dataframe
     """
     df.sort_values(by='Ngày', key=lambda x: pd.to_datetime(x, format='%d/%m/%Y'), inplace=True)
-    df.drop(columns=['KL'], inplace=True)
+    df.drop(columns=['KL', 'Mở', 'Cao', 'Thấp'], inplace=True)
     
     # delete special characters
     df['% Thay đổi'] = df['% Thay đổi'].str.replace('%', '')
@@ -135,9 +135,9 @@ def split_data(
     """
     # split data
     split_point = int(len(df) * split_ratio)
-    X_train = df.iloc[:split_point].drop(columns=['Target', 'Ngày', 'Lần cuối', 'Mở', 'Cao', 'Thấp'])
+    X_train = df.iloc[:split_point].drop(columns=['Target', 'Lần cuối', 'Mở', 'Cao', 'Thấp'])
     y_train = df.iloc[:split_point]['Target']
-    X_test = df.iloc[split_point:].drop(columns=['Target', 'Ngày', 'Lần cuối', 'Mở', 'Cao', 'Thấp'])
+    X_test = df.iloc[split_point:].drop(columns=['Target', 'Lần cuối', 'Mở', 'Cao', 'Thấp'])
     y_test = df.iloc[split_point:]['Target']
 
     return X_train, y_train, X_test, y_test

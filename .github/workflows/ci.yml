@@ -1,0 +1,93 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - main
+
+env:
+  AWS_REGION: ${{ secrets.AWS_REGION }}
+  ECR_REGISTRY: 888265310566.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
+  ECS_CLUSTER: usdvnd-cluster
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    if: ${{ !contains(github.event.head_commit.message, '[skip ci]') }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Build and push API image
+      - name: Build and push API Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: |
+            ${{ env.ECR_REGISTRY }}/usdvnd-api:latest
+            ${{ env.ECR_REGISTRY }}/usdvnd-api:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+        
+      # Build and push Streamlit image
+      - name: Build and push Streamlit Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile.streamlit
+          push: true
+          tags: |
+            ${{ env.ECR_REGISTRY }}/usdvnd-streamlit:latest
+            ${{ env.ECR_REGISTRY }}/usdvnd-streamlit:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Deploy API to ECS
+      - name: Deploy API to ECS
+        run: |
+          aws ecs update-service \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --service usdvnd-api-service \
+            --force-new-deployment \
+            --region ${{ env.AWS_REGION }}
+
+      # Deploy Streamlit to ECS
+      - name: Deploy Streamlit to ECS
+        run: |
+          aws ecs update-service \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --service usdvnd-streamlit-service \
+            --force-new-deployment \
+            --region ${{ env.AWS_REGION }}
+
+      # Wait for deployments to complete
+      - name: Wait for API deployment
+        run: |
+          aws ecs wait services-stable \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --services usdvnd-api-service \
+            --region ${{ env.AWS_REGION }}
+
+      - name: Wait for Streamlit deployment
+        run: |
+          aws ecs wait services-stable \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --services usdvnd-streamlit-service \
+            --region ${{ env.AWS_REGION }}
