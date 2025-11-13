@@ -1,4 +1,4 @@
-FROM python:3.13-slim
+FROM python:3.11-slim
 
 WORKDIR /app
 
@@ -7,7 +7,7 @@ COPY pyproject.toml uv.lock* ./
 
 # Install uv (dependency manager)
 RUN pip install uv
-RUN uv sync --frozen --no-dev --extra streamlit
+RUN uv sync
 
 # Copy project files
 COPY . .
